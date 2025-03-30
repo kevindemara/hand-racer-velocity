@@ -71,24 +71,27 @@ io.on('connection', (socket) => {
   });
 
   socket.on('finish', ({ time }) => {
-    const room = rooms[socket.roomId];
-    if (!room || room.finished.length >= 2) return;
+  const roomId = socket.roomId;
+  const room = rooms[roomId];
+  if (!room || room.finished.length >= 2) return;
 
-    room.finished.push({ id: socket.id, time: parseFloat(time) });
+  room.finished.push({ id: socket.id, time: parseFloat(time) });
 
-    const username = room.usernames[socket.id] || 'Player';
-    leaderboard.push({ name: username, time: parseFloat(time) });
-    leaderboard.sort((a, b) => a.time - b.time);
-    leaderboard = leaderboard.slice(0, 10); // top 10
-    fs.writeFileSync(LEADERBOARD_FILE, JSON.stringify(leaderboard, null, 2));
+  const username = room.usernames[socket.id] || 'Player';
+  leaderboard.push({ name: username, time: parseFloat(time) });
+  leaderboard.sort((a, b) => a.time - b.time);
+  leaderboard = leaderboard.slice(0, 10);
+  fs.writeFileSync(LEADERBOARD_FILE, JSON.stringify(leaderboard, null, 2));
 
-    if (room.finished.length === 2) {
-      const [p1, p2] = room.finished;
-      const winner = p1.time < p2.time ? p1 : p2;
-      const winnerName = room.usernames[winner.id] || 'Player';
-      io.to(socket.roomId).emit('declare-winner', { winnerName, leaderboard });
-    }
-  });
+  if (room.finished.length === 2) {
+    const [p1, p2] = room.finished;
+    const winner = p1.time < p2.time ? p1 : p2;
+    const winnerName = room.usernames[winner.id] || 'Player';
+    io.to(roomId).emit('declare-winner', { winnerName, leaderboard }); // ✅ fixed
+    console.log(`[Server] Winner declared: ${winnerName}`);
+  }
+});
+
 
   socket.on('rematch-request', () => {
     const room = rooms[socket.roomId];

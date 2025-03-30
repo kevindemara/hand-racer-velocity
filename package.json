@@ -1,0 +1,24 @@
+{
+  "name": "hand-racer-velocity",
+  "version": "1.0.0",
+  "description": "Multiplayer Phaser.js game with gesture controls and WebSocket support",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js"
+  },
+  "keywords": [
+    "phaser",
+    "multiplayer",
+    "socket.io",
+    "gesture",
+    "tensorflow",
+    "game"
+  ],
+  "author": "Eventide Studios",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2",
+    "uuid": "^11.1.0"
+  }
+}

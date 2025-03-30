@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: hand-racer-server
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    repo: https://github.com/your-username/hand-racer-velocity
+    branch: main
+    rootDir: server
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: 10000
+
+  - type: static
+    name: hand-racer-client
+    plan: free
+    repo: https://github.com/your-username/hand-racer-velocity
+    branch: main
+    rootDir: public
+    buildCommand: ''
+    staticPublishPath: public

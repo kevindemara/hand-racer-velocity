@@ -1,34 +1,81 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hand Racer – Velocity</title>
-  <link rel="icon" type="image/png" href="assets/favicon.png">
-  <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose"></script>
-  <script src="/socket.io/socket.io.js"></script>
-  <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      background: #000;
-      overflow: hidden;
-      height: 100%;
-      width: 100%;
-    }
-    canvas {
-      display: block;
-      margin: 0 auto;
-    }
-  </style>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#172432"><title>Velocity · Hand Racer 3D</title>
+  <link rel="icon" href="/assets/car.png"><link rel="stylesheet" href="/src/style.css">
 </head>
 <body>
-  <!-- Hidden webcam feed for gesture tracking -->
-  <video id="webcam" autoplay playsinline width="640" height="480" style="display: none;"></video>
-
-  <!-- Game logic and networking -->
-  <script src="game.js"></script>
+  <div id="scene"><canvas id="world" aria-label="3D racing scene"></canvas></div>
+  <div id="loading" role="status">Warming up the garage…</div>
+  <div id="toast" role="status" hidden></div>
+  <section id="garage" class="screen">
+    <header class="topbar"><a class="brand" href="/" aria-label="Velocity home"><span class="brand-mark">V<span>///</span></span><span>VELOCITY<small>HAND RACER / 3D</small></span></a>
+      <nav aria-label="Game menu"><button id="nav-garage" class="nav active">Garage</button><button id="nav-leaderboard" class="nav">Records</button><button id="nav-profile" class="nav">Driver log</button><button id="nav-settings" class="nav">Settings</button></nav>
+      <span id="driver-level" class="driver-level">LEVEL 1</span>
+    </header>
+    <div class="garage-layout">
+      <aside class="race-setup">
+        <span class="eyebrow">YOUR NEXT RUN</span><h1>Find your<br>racing line.</h1>
+        <p class="intro"><span id="garage-count">Eleven machines. Four worlds.</span><br>Your hands on the wheel.</p>
+        <label for="driver-name">DRIVER NAME</label><input id="driver-name" maxlength="20" autocomplete="nickname" placeholder="Driver">
+        <div class="field-row"><div><label for="track-select">ENVIRONMENT</label><select id="track-select"></select></div><div><label for="difficulty">DIFFICULTY</label><select id="difficulty"><option value="easy">Rookie</option><option value="normal" selected>Club</option><option value="hard">Pro</option></select></div></div>
+        <p id="track-caption" class="caption"></p>
+        <div class="field-row"><div><label for="mode-select">EVENT</label><select id="mode-select"></select></div><div><label for="laps-select">DISTANCE</label><select id="laps-select"><option value="1">Sprint · 1 lap</option><option value="3">Race · 3 laps</option><option value="5">Endurance · 5</option><option value="30">Marathon · 30</option></select></div></div>
+        <p id="mode-caption" class="caption"></p>
+        <label class="check"><input id="daily" type="checkbox"> Daily course · same seed for everyone</label>
+        <label class="check"><input id="menu-camera-enabled" type="checkbox"> Use webcam controls</label>
+        <button id="start-solo" class="primary">START SINGLE PLAYER <span>↗</span></button>
+        <div class="multiplayer-row"><button id="quick-match" class="outline">Quick match</button><button id="create-room" class="outline">Private room</button></div>
+        <div class="join-row"><input id="room-code" placeholder="Room code" maxlength="6" aria-label="Room code"><button id="join-room" class="small-button">Join</button></div>
+        <button id="resume-room" class="outline" hidden>Rejoin previous room</button>
+        <button id="tutorial" class="tutorial-link">New driver? Take a practice run →</button>
+        <p id="control-hint" class="control-hint">WASD / arrows · Space brake · Shift nitro · X drift</p><p class="control-hint">Touch & gamepad ready. Webcam optional.</p>
+      </aside>
+      <div class="garage-stage">
+        <div class="car-heading"><span id="car-class" class="eyebrow"></span><h2 id="car-name">APEX GT</h2><p id="car-description"></p></div>
+        <div class="performance"><dl id="car-performance" aria-label="Car performance"></dl><div id="car-performance-notes" class="performance-notes"></div></div>
+        <div class="garage-bottom">
+          <div class="collection-header"><span class="eyebrow">CHOOSE YOUR MACHINE</span><div><button id="previous-car" class="small-button" aria-label="Previous car">←</button><span id="car-position" aria-live="polite">1 / 10</span><button id="next-car" class="small-button" aria-label="Next car">→</button></div></div>
+          <div id="car-picker" class="car-picker" role="group" aria-label="Choose a car"></div>
+          <div class="finish-options"><label>PAINT <input id="paint" type="color" value="#f17c4a"></label><label for="tuning">SETUP <select id="tuning"><option value="balanced">Balanced</option><option value="grip">Corner grip</option><option value="speed">Top speed</option></select></label><label for="wheel-style">WHEELS <select id="wheel-style"></select></label><label for="trail-style">BOOST TRAIL <select id="trail-style"><option value="none">None</option><option value="ember">Ember</option><option value="ice">Ice</option></select></label><label class="check"><input id="stripe" type="checkbox"> Racing stripe</label></div>
+          <div class="stage-footer"><span>REAL-TIME 3D GARAGE</span><span>ENGINEERED FOR PLAY.</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+  <section id="race-ui" class="screen" hidden>
+    <div class="race-top"><div class="race-identity"><span id="race-mode" class="eyebrow">CIRCUIT</span><strong id="race-track">Golden Coast</strong><span id="race-lap">LAP 1 / 1</span><div class="lap-progress" role="progressbar" aria-label="Current lap progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="lap-progress"><i id="lap-progress-fill"></i></div></div><div class="race-clock"><div id="race-time" class="race-time">0:00.00</div><div class="lap-times"><span>CURRENT <b id="current-lap">0:00.00</b></span><span>BEST <b id="best-lap">—</b></span></div></div><div class="race-buttons"><button id="share-room" class="outline" hidden>Copy invite</button><button id="race-view" class="outline" aria-label="Change driving view (chase)">Chase view</button><button id="race-camera" class="outline" aria-pressed="false">Enable webcam</button><button id="pause-button" class="outline">Pause</button><button id="race-menu" class="outline">Garage</button></div></div>
+    <div id="standings" class="standings"></div><div id="race-message" class="race-message" role="status"></div>
+    <aside id="race-lobby" class="race-lobby" aria-labelledby="lobby-title" hidden>
+      <span class="eyebrow">PRIVATE STARTING GRID</span><h2 id="lobby-title">Bring your crew.</h2>
+      <div class="lobby-ticket"><span>ROOM CODE</span><strong id="lobby-code"></strong><span id="lobby-count"></span></div>
+      <p id="lobby-course" class="caption"></p><div id="lobby-drivers" class="lobby-drivers"></div>
+      <p id="lobby-status" class="caption" role="status"></p><div id="lobby-camera"></div>
+      <div class="lobby-actions"><button id="lobby-ready" class="outline" aria-pressed="false">Ready to race</button><button id="lobby-start" class="primary" disabled>Start race</button></div>
+      <p class="caption">Copy the invite above. Choose Ready when your controls are set.</p>
+    </aside>
+    <div class="race-bottom"><div class="speedometer"><strong id="speed">0</strong><span>KM/H</span><div id="nitro-meter" role="progressbar" aria-label="Nitro reserve" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><i></i></div><small id="nitro-hint">NITRO / LEFT SHIFT</small></div><div class="race-details"><span id="race-score">0 PTS</span><span id="race-condition">Find the racing line</span><span id="race-gate"></span><span id="race-split"></span></div><canvas id="minimap" width="180" height="150" aria-label="Track map"></canvas></div>
+    <div id="touch-controls"><div><button data-drive="left" aria-label="Steer left">◀</button><button data-drive="right" aria-label="Steer right">▶</button></div><div><button data-drive="drift">DRIFT</button><button data-drive="nitro">NITRO</button><button data-drive="brake">BRAKE</button><button data-drive="throttle">GO</button></div></div>
+  </section>
+  <aside id="camera-panel" hidden><div class="camera-preview"><video id="webcam" autoplay muted playsinline></video><canvas id="hand-overlay" width="320" height="240"></canvas></div><p id="camera-status" role="status">Webcam off</p><div id="calibration-feedback"><label id="calibration-label" for="calibration-progress">Calibration · 0%</label><progress id="calibration-progress" max="100" value="0"></progress><p class="camera-tip">Hold one open palm steady. If the hand is visible but progress stays low, use your current hand position.</p></div><p id="gesture-feedback" class="camera-tip"></p><div class="steering-meter"><i id="steering-dot"></i></div><button id="calibrate-visible" class="small-button" disabled>Use current hand position</button><button id="camera-retry" class="small-button" hidden>Retry camera</button><button id="recalibrate" class="small-button">Recalibrate</button><button id="camera-off" class="small-button">Use keyboard</button></aside>
+  <dialog id="pause-dialog"><span class="eyebrow">PIT STOP</span><h2 id="pause-title">Race paused</h2><p id="pause-copy">Take a breath. Your race will wait.</p><button id="resume" class="primary">Resume race</button><button id="pause-restart" class="outline">Restart run</button><button id="pause-garage" class="outline">Return to garage</button></dialog>
+  <dialog id="results-dialog"><span class="eyebrow">FINISH LINE</span><h2 id="result-title">Race complete</h2><p id="result-subtitle"></p><div id="result-time" class="result-time"></div><p id="result-best"></p><div id="result-stats" class="result-stats"></div><div id="lap-splits"></div><p id="record-status" role="status"></p><div class="dialog-actions"><button id="race-again" class="primary">Race again</button><button id="result-garage" class="outline">Garage</button></div></dialog>
+  <dialog id="settings-dialog"><span class="eyebrow">MAKE IT YOURS</span><h2>Controls & comfort</h2><div class="settings-grid">
+    <label class="check"><input id="camera-enabled" type="checkbox"> Webcam gesture controls</label><p class="caption">Open palm: brake / calibrate. Fist: accelerate. Tilt: steer. Manual steering keeps hand pedals; manual pedals keep hand steering.</p>
+    <label for="sensitivity">Webcam steering sensitivity <output id="sensitivity-value">1.0</output></label><input id="sensitivity" type="range" min="0.4" max="2.5" step="0.1">
+    <label class="check"><input id="mirror" type="checkbox"> Mirror webcam steering</label><label class="check"><input id="assist" type="checkbox"> Steering assistance</label>
+    <label for="gamepad-deadzone">Controller dead zone <output id="gamepad-deadzone-value">12%</output></label><input id="gamepad-deadzone" type="range" min="0.04" max="0.30" step="0.01">
+    <p id="controller-status" class="caption" role="status">Connect a controller and press a button to detect it.</p>
+    <label for="controller-steering">Controller steering</label><meter id="controller-steering" min="-1" max="1" value="0">0</meter>
+    <p class="caption">Left stick: steer. RT / A: accelerate. LT / B: brake. LB: nitro. RB: drift. Raise the dead zone if the stick moves when untouched.</p>
+    <label for="driving-view">Driving view</label><select id="driving-view"><option value="chase">Chase</option><option value="wide">Wide chase</option><option value="road">Road / first person</option></select><label for="quality">Graphics quality</label><select id="quality"><option value="low">Performance</option><option value="medium">Balanced</option><option value="high">High quality</option></select>
+    <label for="volume">Audio volume</label><input id="volume" type="range" min="0" max="1" step="0.05">
+    <label class="check"><input id="reduced-motion" type="checkbox"> Reduced motion</label><label class="check"><input id="reduced-flashes" type="checkbox"> Reduced flashes</label><label class="check"><input id="high-contrast" type="checkbox"> High contrast HUD</label>
+    <p class="caption">Select a control, then press its new key. Escape cancels. Used keys swap controls. Arrow keys keep their driving direction; Tab remains navigation.</p><div id="key-bindings" class="key-bindings"></div>
+  </div><button id="settings-done" class="primary">Save & close</button></dialog>
+  <dialog id="records-dialog"><span class="eyebrow">THE PADDOCK</span><h2>Verified records</h2><p class="caption">Current track, event, difficulty and distance. Solo replays are verified before publishing.</p><div id="records-list"></div><button id="records-close" class="outline">Back to garage</button></dialog>
+  <dialog id="profile-dialog"><span class="eyebrow">YOUR JOURNEY</span><h2>Driver log</h2><div id="profile-stats" class="result-stats"></div><div id="achievements"></div><h3>Recent runs</h3><div id="race-history"></div><button id="profile-close" class="outline">Back to garage</button></dialog>
+  <script type="module" src="/src/main.js"></script>
 </body>
 </html>

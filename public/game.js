@@ -1,4 +1,4 @@
-// game.js – Hand Racer – Velocity (Multiplayer Lobby, Countdown, Rematch, Winner, Leaderboard)
+// Hand Racer – Velocity: solo time trials and multiplayer races.
 
 let handposeModel;
 let webcam;
@@ -13,22 +13,34 @@ let boostTimer = 0;
 let slowTimer = 0;
 let raceStarted = false;
 let countdownText;
-let countdownTimer = 3;
+let countdownEvent, goEvent;
 let finishLineReached = false;
 
 let car, opponentCar;
 let road;
-let speedText, gestureText, lapText, tiltText, winnerText, leaderboardText, versusText, waitingText;
+let speedText, gestureText, lapText, tiltText, versusText, waitingText;
 let lapCount = 1;
 let powerUps, obstacles;
 let raceStartTime;
-let restartButton, rematchButton;
-let titleScreen, startButton, usernameInput, multiplayerButton;
+let titleScreen, keys, timerText;
+let powerUpCollider, obstacleCollider;
 let backgroundMusic, raceMusic, muteButton, flashOverlay;
 let isMuted = false;
 
 let username = 'Player';
 let socket;
+let gameMode = null;
+let cameraSession = 0;
+let detectionFrame;
+let handposeLoading;
+
+const TOTAL_LAPS = 30;
+const SOLO_BEST_KEY = 'hand-racer-velocity-solo-best';
+const ui = Object.fromEntries([
+  'menu', 'username', 'use-camera', 'single-player', 'multiplayer',
+  'race-tools', 'back-to-menu', 'control-status', 'results', 'result-title',
+  'result-time', 'result-best', 'result-board', 'race-again', 'results-menu'
+].map(id => [id, document.getElementById(id)]));
 
 const SMOOTHING_FACTOR = 0.75;
 const DX_THRESHOLD = 8;
@@ -37,6 +49,8 @@ const config = {
   type: Phaser.AUTO,
   width: 800,
   height: 600,
+  parent: 'game-root',
+  scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
   physics: {
     default: 'arcade',
     arcade: { debug: false }
@@ -75,58 +89,157 @@ function create() {
 
   flashOverlay = this.add.rectangle(400, 300, 800, 600, 0xffffff, 0).setDepth(30).setAlpha(0);
 
-  usernameInput = document.createElement('input');
-  usernameInput.placeholder = 'Enter username';
-  usernameInput.style.position = 'absolute';
-  usernameInput.style.top = '65%';
-  usernameInput.style.left = '50%';
-  usernameInput.style.transform = 'translate(-50%, -50%)';
-  usernameInput.style.fontSize = '20px';
-  usernameInput.style.padding = '10px';
-  document.body.appendChild(usernameInput);
+  keys = this.input.keyboard.addKeys('UP,LEFT,RIGHT,W,A,D,SPACE', false);
+  ui['single-player'].onclick = () => startMode(this, 'solo');
+  ui.multiplayer.onclick = () => startMode(this, 'multiplayer');
+  ui['back-to-menu'].onclick = () => returnToMenu(this);
+  ui['results-menu'].onclick = () => returnToMenu(this);
+  ui['race-again'].onclick = () => {
+    if (gameMode === 'solo') startSoloCountdown(this);
+    else if (socket && socket.connected) {
+      socket.emit('rematch-request');
+      ui['race-again'].disabled = true;
+      ui['race-again'].textContent = 'Waiting for opponent…';
+    }
+  };
+  ui.menu.hidden = false;
+}
 
-  multiplayerButton = this.add.text(320, 460, 'Multiplayer', {
-    fontSize: '32px', fill: '#fff', backgroundColor: '#00BFFF'
-  }).setPadding(12).setInteractive().setDepth(11)
-    .on('pointerdown', () => {
-      username = usernameInput.value || 'Player';
-      usernameInput.style.display = 'none';
-      titleScreen.setVisible(false);
-      multiplayerButton.setVisible(false);
-      backgroundMusic.stop();
-      raceMusic.play();
-      connectToServer(this);
-    });
+function startMode(scene, mode) {
+  username = ui.username.value.trim() || 'Player';
+  gameMode = mode;
+  ui.menu.hidden = true;
+  ui['race-tools'].hidden = false;
+  titleScreen.setVisible(false);
+  backgroundMusic.stop();
+  raceMusic.play();
+  initGame.call(scene);
+  ui['control-status'].textContent = 'Keyboard: ↑ / W accelerate · ← → / A D steer · Space brake';
+  if (ui['use-camera'].checked) initHandpose();
+  if (mode === 'solo') startSoloCountdown(scene);
+  else connectToServer(scene);
+}
+
+function clearRace() {
+  raceStarted = false;
+  finishLineReached = false;
+  lapCount = 1;
+  boostTimer = 0;
+  slowTimer = 0;
+  if (countdownEvent) countdownEvent.remove(false);
+  if (goEvent) goEvent.remove(false);
+  countdownEvent = goEvent = null;
+  if (powerUpCollider) powerUpCollider.destroy();
+  if (obstacleCollider) obstacleCollider.destroy();
+  powerUpCollider = obstacleCollider = null;
+  if (powerUps) powerUps.destroy(true);
+  if (obstacles) obstacles.destroy(true);
+  powerUps = obstacles = null;
+  for (const item of [speedText, gestureText, lapText, tiltText, timerText, countdownText, versusText, waitingText, opponentCar]) {
+    if (item) item.destroy();
+  }
+  speedText = gestureText = lapText = tiltText = timerText = countdownText = versusText = waitingText = opponentCar = null;
+  if (car) car.setPosition(400, 500).setVelocity(0);
+  if (road) road.tilePositionY = 0;
+  ui.results.hidden = true;
+  ui['race-again'].disabled = false;
+}
+
+function showCountdown(scene, count) {
+  if (!countdownText) countdownText = scene.add.text(400, 260, '', {
+    fontSize: '64px', fill: '#fff', stroke: '#061326', strokeThickness: 6
+  }).setOrigin(0.5).setDepth(10);
+  countdownText.setText(String(count));
+}
+
+function startSoloCountdown(scene) {
+  clearRace();
+  showCountdown(scene, 3);
+  let count = 3;
+  countdownEvent = scene.time.addEvent({ delay: 1000, repeat: 2, callback: () => {
+    count--;
+    if (count > 0) showCountdown(scene, count);
+    else startRace(scene);
+  } });
+}
+
+function startRace(scene) {
+  showCountdown(scene, 'GO!');
+  goEvent = scene.time.delayedCall(1000, () => {
+    if (countdownText) countdownText.setText('');
+  });
+  raceStarted = true;
+  raceStartTime = scene.time.now;
+  setupRace.call(scene);
+}
+
+function returnToMenu(scene) {
+  clearRace();
+  if (socket) socket.disconnect();
+  socket = null;
+  gameMode = null;
+  if (car) car.destroy();
+  if (road) road.destroy();
+  car = road = null;
+  stopCamera();
+  raceMusic.stop();
+  backgroundMusic.play();
+  titleScreen.setVisible(true);
+  ui['race-tools'].hidden = true;
+  ui.menu.hidden = false;
+}
+
+function showResults(title, totalTime, board = '') {
+  raceStarted = false;
+  finishLineReached = true;
+  car.setVelocity(0);
+  // Freeze the race behind the result panel.
+  if (powerUps) powerUps.setVelocityY(0);
+  if (obstacles) obstacles.setVelocityY(0);
+  ui['result-title'].textContent = title;
+  ui['result-time'].textContent = totalTime ? `${totalTime}s` : '';
+  ui['result-best'].textContent = '';
+  ui['result-board'].textContent = board;
+  ui['race-again'].textContent = gameMode === 'solo' ? 'Race again' : 'Rematch';
+  ui['race-again'].disabled = false;
+  ui.results.hidden = false;
+}
+
+function finishSolo(totalTime) {
+  showResults('Time trial complete', totalTime);
+  try {
+    const stored = Number(localStorage.getItem(SOLO_BEST_KEY));
+    const previousBest = Number.isFinite(stored) && stored > 0 ? stored : Infinity;
+    const newBest = Number(totalTime) < previousBest;
+    const best = Math.min(Number(totalTime), previousBest);
+    if (newBest) localStorage.setItem(SOLO_BEST_KEY, String(best));
+    ui['result-best'].textContent = `${newBest ? 'New personal best! ' : ''}Best: ${best.toFixed(2)}s`;
+  } catch {
+    ui['result-best'].textContent = 'Personal best could not be saved in this browser.';
+  }
 }
 
 function connectToServer(scene) {
   socket = io();
-  socket.emit('join-game', { username });
 
   socket.on('waiting', () => {
     if (waitingText) waitingText.destroy();
-    waitingText = scene.add.text(300, 280, 'Waiting for opponent...', { fontSize: '28px', fill: '#fff' });
+    waitingText = scene.add.text(400, 280, 'Waiting for opponent...', { fontSize: '28px', fill: '#fff' }).setOrigin(0.5);
   });
 
   socket.on('both-ready', (usernames) => {
     if (waitingText) waitingText.destroy();
+    waitingText = null;
     const opponentName = Object.entries(usernames).find(([id, name]) => id !== socket.id)[1];
     versusText = scene.add.text(280, 240, `${username} vs ${opponentName}`, { fontSize: '24px', fill: '#fff' });
   });
 
   socket.on('countdown', (count) => {
-    if (!countdownText) {
-      countdownText = scene.add.text(360, 260, '', { fontSize: '64px', fill: '#fff' }).setDepth(10);
-    }
-    countdownText.setText(count);
+    if (!finishLineReached) showCountdown(scene, count);
   });
 
   socket.on('start-race', () => {
-    if (countdownText) countdownText.setText('GO!');
-    scene.time.delayedCall(1000, () => countdownText.setText(''));
-    raceStarted = true;
-    raceStartTime = scene.time.now;
-    setupRace.call(scene);
+    if (!finishLineReached) startRace(scene);
   });
 
   socket.on('opponent-update', (data) => {
@@ -138,42 +251,23 @@ function connectToServer(scene) {
   });
 
   socket.on('declare-winner', ({ winnerName, leaderboard }) => {
-    finishLineReached = true;
-    car.setVelocity(0);
-    if (winnerText) winnerText.destroy();
-    winnerText = scene.add.text(200, 260, `Winner: ${winnerName}`, { fontSize: '36px', fill: '#00ff00' });
-
-    let board = '🏁 Leaderboard 🏁\n';
-    leaderboard.forEach((entry, index) => {
-      board += `${index + 1}. ${entry.name} - ${entry.time}s\n`;
-    });
-    leaderboardText = scene.add.text(200, 320, board, { fontSize: '20px', fill: '#fff' });
-
-    rematchButton = scene.add.text(300, 540, 'Rematch', {
-      fontSize: '32px', fill: '#fff', backgroundColor: '#EB0497'
-    }).setPadding(10).setInteractive()
-      .on('pointerdown', () => {
-        socket.emit('rematch-request');
-        rematchButton.setVisible(false);
-      });
+    const board = 'Leaderboard\n' + leaderboard.map((entry, index) =>
+      `${index + 1}. ${entry.name} - ${entry.time}s`).join('\n');
+    showResults(`Winner: ${winnerName}`, null, board);
   });
 
   socket.on('rematch-start', () => {
-    if (winnerText) winnerText.destroy();
-    if (leaderboardText) leaderboardText.destroy();
-    if (rematchButton) rematchButton.destroy();
-    if (versusText) versusText.destroy();
-    if (waitingText) waitingText.destroy();
-    finishLineReached = false;
-    raceStarted = false;
-    lapCount = 1;
-    car.setPosition(400, 500);
-    car.setVelocity(0);
-    road.tilePositionY = 0;
-    setupRace.call(scene);
+    clearRace();
   });
 
-  initGame.call(scene);
+  socket.on('opponent-disconnected', () => {
+    showResults('Opponent disconnected', null, 'Return to the menu to find another race.');
+    ui['race-again'].disabled = true;
+  });
+  socket.on('connect_error', () => {
+    ui['control-status'].textContent = 'Cannot reach multiplayer. Retry from the menu or play solo.';
+  });
+  socket.emit('join-game', { username });
 }
 
 function initGame() {
@@ -183,7 +277,6 @@ function initGame() {
   car.setSize(64, 64);
 
   this.physics.world.setBounds(0, 0, 800, 600);
-  initHandpose();
 }
 
 function setupRace() {
@@ -212,13 +305,14 @@ function setupRace() {
     o.setImmovable(true);
   }
 
-  this.physics.add.overlap(car, powerUps, collectPowerUp, null, this);
-  this.physics.add.collider(car, obstacles, hitObstacle, null, this);
+  powerUpCollider = this.physics.add.overlap(car, powerUps, collectPowerUp, null, this);
+  obstacleCollider = this.physics.add.collider(car, obstacles, hitObstacle, null, this);
 
   speedText = this.add.text(16, 16, 'Speed: 0', { fontSize: '20px', fill: '#fff' });
   gestureText = this.add.text(16, 40, 'Gesture: None', { fontSize: '20px', fill: '#fff' });
-  lapText = this.add.text(16, 64, 'Lap: 1', { fontSize: '20px', fill: '#fff' });
+  lapText = this.add.text(16, 64, `Lap: 1 / ${TOTAL_LAPS}`, { fontSize: '20px', fill: '#fff' });
   tiltText = this.add.text(16, 88, 'Tilt: None', { fontSize: '20px', fill: '#fff' });
+  timerText = this.add.text(784, 16, 'Time: 0.00s', { fontSize: '20px', fill: '#fff' }).setOrigin(1, 0);
 }
 
 function flashScreen(scene, color = 0xffffff, duration = 100) {
@@ -248,16 +342,22 @@ function update(time) {
   if (!raceStarted || finishLineReached) return;
 
   let speed;
-  if (currentGesture === 'Fist') speed = -200;
+  const accelerating = keys.UP.isDown || keys.W.isDown;
+  const braking = keys.SPACE.isDown;
+  const steeringLeft = keys.LEFT.isDown || keys.A.isDown;
+  const steeringRight = keys.RIGHT.isDown || keys.D.isDown;
+  if (accelerating || currentGesture === 'Fist') speed = -200;
   else if (currentGesture === 'None') speed = -100;
   else speed = 0;
   if (boostTimer > 0) speed = -400;
   else if (slowTimer > 0) speed = -100;
+  if (braking) speed = 0;
 
-  const moving = currentGesture === 'Fist' || currentGesture === 'None';
+  const moving = !braking && (accelerating || currentGesture === 'Fist' || currentGesture === 'None');
+  const steering = steeringLeft ? 'left' : steeringRight ? 'right' : tiltDirection;
   if (moving) {
     car.setVelocityY(speed);
-    switch (tiltDirection) {
+    switch (steering) {
       case 'left': car.setVelocityX(-150); break;
       case 'right': car.setVelocityX(150); break;
       default: car.setVelocityX(0); break;
@@ -270,13 +370,20 @@ function update(time) {
 
   if (car.y < 0) {
     lapCount++;
-    lapText.setText('Lap: ' + lapCount);
+    lapText.setText(`Lap: ${Math.min(lapCount, TOTAL_LAPS)} / ${TOTAL_LAPS}`);
     car.setY(600);
-    if (lapCount > 30 && socket) {
+    if (lapCount > TOTAL_LAPS) {
       finishLineReached = true;
       car.setVelocity(0);
       const totalTime = ((time - raceStartTime) / 1000).toFixed(2);
-      socket.emit('finish', { time: totalTime });
+      timerText.setText(`Time: ${totalTime}s`);
+      if (gameMode === 'solo') finishSolo(totalTime);
+      else if (socket) {
+        socket.emit('finish', { time: totalTime });
+        showResults('Race finished', totalTime, 'Waiting for your opponent to finish…');
+        ui['race-again'].disabled = true;
+      }
+      return;
     }
   }
 
@@ -288,7 +395,8 @@ function update(time) {
 
   speedText.setText('Speed: ' + Math.abs(car.body.velocity.y));
   gestureText.setText('Gesture: ' + currentGesture);
-  tiltText.setText('Tilt: ' + (tiltDirection || 'None'));
+  tiltText.setText('Tilt: ' + (steering || 'None'));
+  timerText.setText(`Time: ${((time - raceStartTime) / 1000).toFixed(2)}s`);
 
   if (socket) {
     socket.emit('player-move', { x: car.x, y: car.y });
@@ -296,21 +404,64 @@ function update(time) {
 }
 
 async function initHandpose() {
-  webcam = document.getElementById('webcam');
-  const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-  webcam.srcObject = stream;
-  handposeModel = await handpose.load();
-  detectHands();
+  const session = ++cameraSession;
+  ui['control-status'].textContent = 'Starting webcam gestures… Keyboard controls are ready.';
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    if (session !== cameraSession) {
+      stream.getTracks().forEach(track => track.stop());
+      return;
+    }
+    webcam = document.getElementById('webcam');
+    webcam.srcObject = stream;
+    await webcam.play();
+    if (!handposeModel) {
+      if (!handposeLoading) handposeLoading = handpose.load().catch(error => {
+        handposeLoading = null;
+        throw error;
+      });
+      handposeModel = await handposeLoading;
+    }
+    if (session !== cameraSession) return;
+    ui['control-status'].textContent = 'Webcam gestures ready · Keyboard controls also available';
+    detectHands(session);
+  } catch {
+    if (session !== cameraSession) return;
+    stopCamera();
+    ui['control-status'].textContent = 'Webcam unavailable. Use ↑ / W, ← → / A D and Space.';
+  }
 }
 
-async function detectHands() {
+function stopCamera() {
+  cameraSession++;
+  cancelAnimationFrame(detectionFrame);
+  if (webcam && webcam.srcObject) {
+    webcam.srcObject.getTracks().forEach(track => track.stop());
+    webcam.srcObject = null;
+  }
+  currentGesture = previousGesture = 'None';
+  gestureConfidence = frameCount = smoothedDx = 0;
+  tiltDirection = null;
+}
+
+async function detectHands(session) {
+  if (session !== cameraSession) return;
   frameCount++;
   if (frameCount % 3 !== 0) {
-    requestAnimationFrame(detectHands);
+    detectionFrame = requestAnimationFrame(() => detectHands(session));
     return;
   }
 
-  const predictions = await handposeModel.estimateHands(webcam);
+  let predictions;
+  try {
+    predictions = await handposeModel.estimateHands(webcam);
+  } catch {
+    if (session !== cameraSession) return;
+    stopCamera();
+    ui['control-status'].textContent = 'Gesture tracking stopped. Keyboard controls are ready.';
+    return;
+  }
+  if (session !== cameraSession) return;
   if (predictions.length > 0) {
     const interpreted = interpretGestureTwoHands(predictions);
     if (interpreted === previousGesture) gestureConfidence++;
@@ -322,7 +473,7 @@ async function detectHands() {
     currentGesture = 'None';
     tiltDirection = null;
   }
-  requestAnimationFrame(detectHands);
+  detectionFrame = requestAnimationFrame(() => detectHands(session));
 }
 
 function interpretGestureTwoHands(hands) {
@@ -353,3 +504,4 @@ function detectTiltSmooth(landmarks) {
 }
 
 const game = new Phaser.Game(config);
+window.addEventListener('pagehide', stopCamera);

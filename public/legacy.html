@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hand Racer – Velocity</title>
+  <link rel="icon" type="image/png" href="assets/car.png">
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #000;
+      overflow: hidden;
+      height: 100%;
+      width: 100%;
+    }
+    body { display: grid; place-items: center; font-family: Arial, sans-serif; color: #fff; }
+    #game-root { position: relative; width: min(100vw, 133.333vh, 800px); aspect-ratio: 4 / 3; }
+    canvas {
+      display: block;
+      margin: 0 auto;
+    }
+    [hidden] { display: none !important; }
+    .panel { position: absolute; z-index: 2; left: 50%; transform: translateX(-50%); width: min(88%, 420px); box-sizing: border-box; padding: 18px; background: rgba(10, 20, 38, .94); border: 2px solid #00bfff; border-radius: 10px; text-align: center; }
+    #menu { bottom: 5%; }
+    #results { top: 50%; transform: translate(-50%, -50%); }
+    .panel h1, .panel h2 { margin: 0 0 10px; font-size: clamp(18px, 3.5vw, 26px); }
+    .panel p { margin: 10px 0; line-height: 1.4; font-size: 14px; }
+    .field-label { display: block; text-align: left; margin-bottom: 5px; font-size: 13px; }
+    input[type="text"] { box-sizing: border-box; width: 100%; padding: 10px; border: 1px solid #00bfff; border-radius: 4px; background: #142338; color: #fff; font: inherit; }
+    .camera-option { display: block; margin: 12px 0; font-size: 13px; }
+    .actions { display: flex; gap: 10px; }
+    button { cursor: pointer; border: 0; border-radius: 5px; padding: 11px 14px; background: #00bfff; color: #061326; font: bold 15px Arial, sans-serif; }
+    .actions button { flex: 1; }
+    .secondary { background: #eb0497; color: #fff; }
+    button:disabled { cursor: default; opacity: .6; }
+    button:focus-visible, input:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+    #race-tools { position: absolute; z-index: 2; bottom: 10px; left: 10px; right: 85px; display: flex; align-items: center; gap: 12px; }
+    #control-status { font-size: 12px; background: rgba(10, 20, 38, .9); padding: 6px; }
+    #result-time { font: bold 32px monospace; color: #00bfff; }
+    #result-board { white-space: pre-line; max-height: 180px; overflow: auto; font-size: 13px; }
+    @media (max-height: 480px), (max-width: 480px) {
+      .panel { padding: 10px; }
+      .panel p, .camera-option { font-size: 11px; margin: 6px 0; }
+      button { padding: 8px; font-size: 12px; }
+      input[type="text"] { padding: 6px; }
+      #control-status { font-size: 10px; }
+    }
+  </style>
+</head>
+<body>
+  <main id="game-root" aria-label="Hand Racer – Velocity">
+    <section id="menu" class="panel" hidden aria-labelledby="menu-title">
+      <h1 id="menu-title">Choose your race</h1>
+      <label class="field-label" for="username">Driver name</label>
+      <input id="username" type="text" maxlength="20" placeholder="Enter username" autocomplete="nickname">
+      <label class="camera-option"><input id="use-camera" type="checkbox"> Use webcam gestures (optional)</label>
+      <div class="actions">
+        <button id="single-player">Single player</button>
+        <button id="multiplayer" class="secondary">Multiplayer</button>
+      </div>
+      <p>Solo: a 30-lap time trial. Multiplayer: race another driver.</p>
+      <p>↑ / W accelerate · ← → / A D steer · Space brake<br>Gestures: fist to accelerate · tilt to steer · open hand to stop</p>
+    </section>
+    <div id="race-tools" hidden>
+      <button id="back-to-menu">Menu</button>
+      <span id="control-status" role="status">Keyboard controls ready</span>
+    </div>
+    <section id="results" class="panel" hidden aria-labelledby="result-title">
+      <h2 id="result-title">Race complete</h2>
+      <p id="result-time"></p>
+      <p id="result-best"></p>
+      <p id="result-board"></p>
+      <div class="actions">
+        <button id="race-again">Race again</button>
+        <button id="results-menu" class="secondary">Main menu</button>
+      </div>
+    </section>
+  </main>
+  <!-- Hidden webcam feed for gesture tracking -->
+  <video id="webcam" autoplay playsinline width="640" height="480" style="display: none;"></video>
+
+  <!-- Game logic and networking -->
+  <script src="game.js"></script>
+</body>
+</html>

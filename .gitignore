@@ -1,0 +1,36 @@
+node_modules/
+dist/
+server/data/
+leaderboard.json
+*.log
+
+# Local documentation and assistant context
+*.[mM][dD]
+*.markdown
+docs/
+.codex/
+.claude/
+.cursor/
+.agents/
+AGENTS*
+CLAUDE*
+.cursorrules
+.github/copilot-instructions*
+.github/instructions/
+
+# Credentials, private configuration and local artifacts
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*credentials*
+*secrets*
+.npmrc
+.netrc
+*.sqlite*
+*.db
+*.bak
+codex-clipboard-*

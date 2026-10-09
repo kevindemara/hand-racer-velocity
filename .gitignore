@@ -6,6 +6,7 @@ leaderboard.json
 
 # Local documentation and assistant context
 *.[mM][dD]
+!/README.md
 *.markdown
 docs/
 .codex/

@@ -1,0 +1,16 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Solo static worker check</title><link rel="icon" href="data:,">
+<h1>Static gesture worker check</h1><p>Test fixture only, excluded from deployment. No camera or frames leave this browser.</p>
+<button id="run">Load model and test blank frame</button><pre id="status" role="status">Not started</pre>
+<script>
+document.getElementById('run').onclick=()=>{
+ const status=document.getElementById('status');status.textContent='Loading…';
+ const baseUrl=new URL('./',location.href).href,worker=new Worker(new URL('vendor/gesture-worker.js',baseUrl));
+ const timeout=setTimeout(()=>{status.textContent='FAIL: timeout';worker.terminate();},30000);
+ worker.onmessage=({data})=>{
+  if(data.type==='ready'){const canvas=new OffscreenCanvas(640,480);const c=canvas.getContext('2d');c.fillStyle='#ddd';c.fillRect(0,0,640,480);const bitmap=canvas.transferToImageBitmap();worker.postMessage({type:'frame',bitmap,timestamp:performance.now()},[bitmap]);}
+  if(data.type==='result'){clearTimeout(timeout);status.textContent=`PASS: worker, local WASM, model and blank-frame inference (${data.result.landmarks.length} hands).`;worker.terminate();}
+  if(data.type==='error'){clearTimeout(timeout);status.textContent='FAIL: '+data.message;worker.terminate();}
+ };
+ worker.onerror=e=>{clearTimeout(timeout);status.textContent='FAIL: '+e.message;worker.terminate();};worker.postMessage({type:'init',baseUrl});
+};
+</script></html>

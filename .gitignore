@@ -35,3 +35,7 @@ CLAUDE*
 *.db
 *.bak
 codex-clipboard-*
+
+# Generated static Solo deployment artifacts
+dist-namecheap/
+velocity-namecheap-solo.zip

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { assetUrl } from './asset-url.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -188,7 +189,7 @@ export class RacingRenderer {
     this.composer = new EffectComposer(this.renderer); this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.bloom = new UnrealBloomPass(new THREE.Vector2(800, 600), .24, .45, 1.4); this.composer.addPass(this.bloom); this.composer.addPass(new OutputPass());
     this.world = new THREE.Group(); this.scene.add(this.world); this.cars = new Map(); this.menu = true;
-    this.texture = new THREE.TextureLoader().load('/assets/generated/asphalt.png'); this.texture.wrapS = this.texture.wrapT = THREE.RepeatWrapping; this.texture.colorSpace = THREE.SRGBColorSpace; this.texture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
+    this.texture = new THREE.TextureLoader().load(assetUrl('assets/generated/asphalt.png')); this.texture.wrapS = this.texture.wrapT = THREE.RepeatWrapping; this.texture.colorSpace = THREE.SRGBColorSpace; this.texture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
     this.resizeObserver = new ResizeObserver(() => this.resize()); this.resizeObserver.observe(canvas.parentElement); this.resize();
   }
   resize() {

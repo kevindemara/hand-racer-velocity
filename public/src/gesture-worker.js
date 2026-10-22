@@ -3,9 +3,10 @@ let recognizer;
 self.onmessage = async ({ data }) => {
   try {
     if (data.type === 'init') {
-      const vision = await FilesetResolver.forVisionTasks(data.origin + '/vendor/mediapipe');
+      const baseUrl = data.baseUrl || data.origin + '/';
+      const vision = await FilesetResolver.forVisionTasks(new URL('vendor/mediapipe', baseUrl).href);
       recognizer = await GestureRecognizer.createFromOptions(vision, {
-        baseOptions: { modelAssetPath: data.origin + '/assets/models/gesture_recognizer.task', delegate: 'CPU' },
+        baseOptions: { modelAssetPath: new URL('assets/models/gesture_recognizer.task', baseUrl).href, delegate: 'CPU' },
         runningMode: 'VIDEO', numHands: 2, minHandDetectionConfidence: .65,
         minHandPresenceConfidence: .65, minTrackingConfidence: .65,
         cannedGesturesClassifierOptions: { categoryAllowlist: ['Closed_Fist', 'Open_Palm', 'None'], scoreThreshold: .4 }

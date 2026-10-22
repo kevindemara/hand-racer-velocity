@@ -6,8 +6,9 @@ import * as racing from '../shared/racing.js';
 import * as modes from '../shared/modes.js';
 import * as feedback from '../public/src/race-feedback.js';
 import * as garage from '../public/src/garage-performance.js';
+import { personalRecords, recordContext } from '../public/src/local-records.js';
 
-function app() {
+function app({ solo = false, invite = false } = {}) {
   class Element {
     constructor(id = '') { this.id = id; this.children = []; this.style = { setProperty() {} }; this.classList = { toggle() {} }; this.value = ''; this.type = ''; this.dataset = {}; }
     append(...nodes) { this.appendCalls=(this.appendCalls||0)+1;for (const node of nodes) { node.parentElement?.children.splice(node.parentElement.children.indexOf(node), 1); this.children.push(node); node.parentElement = this; } }
@@ -19,7 +20,8 @@ function app() {
     showModal() { this.open = true; }
     close() { this.open = false; }
   }
-  const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+  let html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+  if (solo) html = html.replace(/<!-- full-only:start -->[\s\S]*?<!-- full-only:end -->/g, '');
   const elements = Object.fromEntries([...html.matchAll(/id="([^"]+)"/g)].map(m => [m[1], new Element(m[1])]));
   const body = new Element('body'); body.append(...Object.values(elements));
   Object.entries({ 'track-select':'coast', 'mode-select':'circuit', difficulty:'normal', 'laps-select':'1', tuning:'balanced', 'wheel-style':'alloy', 'trail-style':'none', paint:'#f17c4a' }).forEach(([id,value]) => elements[id].value = value);
@@ -36,17 +38,38 @@ function app() {
   }
   const sounds=[],particles=[];
   class Renderer { garage() {} quality() {} trackWorld() {} vehicle() {} render() {} pruneVehicles() {} emitParticles(_v,type){particles.push(type);} dispose(){this.disposes=(this.disposes||0)+1;} }
-  const context = vm.createContext({ ...racing, ...modes, ...feedback, ...garage, console, performance, URL, URLSearchParams,
+  const requests = [];
+  const context = vm.createContext({ ...racing, ...modes, ...feedback, ...garage, personalRecords, recordContext, __VELOCITY_SOLO__:solo, console, performance, URL, URLSearchParams,
     document: { body, hidden:false, getElementById: id => elements[id], createElement: () => new Element(), querySelectorAll: () => [], querySelector: () => null, addEventListener(event,callback){events.document[event]=callback;} },
-    window: { addEventListener(event,callback){events.window[event]=callback;} }, location:{href:'http://localhost:3000/'}, sessionStorage:{removeItem(){},getItem(){return null}},
+    window: { addEventListener(event,callback){events.window[event]=callback;} }, location:{href:'http://localhost:3000/'+(invite?'?room=ABCDEF':'')}, sessionStorage:{removeItem(){},getItem(){return null}},
     DrivingInput:class { constructor(){this.keys = new Set();} read(){return {throttle:0,brake:1,steer:0};} }, RacingRenderer:Renderer, WebcamControls:Webcam, RacingAudio:class {start(){this.starts=(this.starts||0)+1;}update(vehicle){(this.updates||=[]).push(vehicle);}effect(type){sounds.push(type);}dispose(){this.disposes=(this.disposes||0)+1;}},
     loadProfile:() => profile, saveProfile:() => true, cosmetics:[{id:'alloy',name:'Alloy',xp:0}], category:() => 'fixture',
-    requestAnimationFrame() {}, setTimeout:() => 1, clearTimeout() {}, fetch:async () => ({json:async () => ({token:'test'})})
+    recordRace:()=>({saved:true}), requestAnimationFrame() {}, setTimeout:() => 1, clearTimeout() {}, fetch:async url => { requests.push(url); return {json:async () => ({token:'test'})}; }
   });
   const source = readFileSync(new URL('../public/src/main.js',import.meta.url),'utf8').replace(/^import .*;\r?\n/gm,'');
   vm.runInContext(source+'\nglobalThis.app = { startSolo, resumeRace, pauseRace, webcam, controls, audio, settings, updateLobby, acceptSnapshot, frame(delta=1){loop(previous+delta);}, setLobby(details){race=newRace(config());race.multiplayer=true;network=details;socket={connected:true};}, get renderer(){return renderer;}, get race(){return race;} };',context);
-  return { ...context.app, elements, body, sounds, particles, events, document:context.document, controller:context.app };
+  return { ...context.app, elements, body, sounds, particles, events, requests, profile, document:context.document, controller:context.app };
 }
+
+test('Solo app starts with online DOM removed, ignores old invite links, races AI, shows records and restarts without API calls', async () => {
+  const a=app({solo:true,invite:true});a.settings.camera=false;
+  assert.equal(a.elements['quick-match'],undefined);assert.equal(a.elements['room-code'],undefined);
+  assert.equal(a.elements.loading.hidden,true);
+  await a.startSolo();assert.equal(a.controller.race.bots.length,3);
+  a.controller.race.state='racing';a.controller.frame(20);
+  assert.ok(a.controller.race.bots.some(bot=>bot.speed>0));
+  Object.assign(a.controller.race.vehicle,{distance:a.controller.race.track.length-.1,speed:50,time:20});a.controller.frame(20);
+  assert.equal(a.elements['results-dialog'].open,true);
+  await a.elements['nav-leaderboard'].onclick();assert.equal(a.elements['records-dialog'].open,true);
+  a.elements['records-close'].onclick();await a.elements['race-again'].onclick();
+  assert.equal(a.controller.race.state,'countdown');assert.deepEqual(a.requests,[]);
+});
+
+test('Full app still requests server challenges', async () => {
+  const a=app();a.settings.camera=false;await a.startSolo();
+  assert.equal(a.requests.length,1);assert.match(a.requests[0],/^\/api\/challenge\?/);
+  assert.ok(a.elements['quick-match'].onclick);
+});
 
 test('online authoritative snapshots trigger player feedback once and suppress old rejoin or paused effects', () => {
   const a=app(), own={...racing.createVehicle(),id:'you',time:12,collisions:3,pickups:2,nearMisses:4};

@@ -1,4 +1,5 @@
-import { io } from 'socket.io-client';
+import { io } from './network.js';
+import { personalRecords, recordContext } from './local-records.js';
 import { advanceMode, awardChampionship, championshipTracks } from '../../shared/modes.js';
 import { RacingRenderer } from './renderer.js';
 import { WebcamControls } from './webcam.js';
@@ -9,6 +10,7 @@ import { keyLabel, lapFeedback, drivingCondition, hazardCue, ghostDelta, countdo
 import { loadProfile, saveProfile, recordRace, category, cosmetics } from './profile.js';
 import { CARS, TRACKS, MODES, DIFFICULTIES, buildTrack, createVehicle, makeHazards, stepVehicle, botInput, trackPoint, trackSurface, formatTime, hash, clamp } from '../../shared/racing.js';
 
+const SOLO = typeof __VELOCITY_SOLO__ !== 'undefined' && __VELOCITY_SOLO__;
 const $ = id => document.getElementById(id);
 const profile = loadProfile(), settings = profile.settings;
 const controls = new DrivingInput(settings), audio = new RacingAudio();
@@ -181,7 +183,7 @@ async function startSolo(practice = false, championshipNext = false) {
   showRace(); renderer.trackWorld(race.track, race.hazards); renderer.vehicle('player', race.vehicle, $('paint').value, { wheels: $('wheel-style').value, stripe: $('stripe').checked });
   audio.start();
   if (settings.camera) { $('camera-panel').hidden = false; if (!webcam.active) webcam.start(); if (!webcam.state.calibrated) pauseRace('tracking'); }
-  if (!practice && ['circuit','time-trial','championship'].includes(c.mode)) {
+  if (!SOLO && !practice && ['circuit','time-trial','championship'].includes(c.mode)) {
     const thisRace = race;
     try { const response = await fetch('/api/challenge?' + new URLSearchParams(c)); const challenge = await response.json(); if (race === thisRace) thisRace.token = challenge.token; }
     catch { toast('Playing locally. Verified records need the server connection.'); }
@@ -194,7 +196,7 @@ function showRace() {
   $('race-mode').textContent = race.practice ? 'PRACTICE RUN' : race.multiplayer ? `MULTIPLAYER / ${network?.code || ''}` : MODES.find(m => m.id === race.config.mode)?.name.toUpperCase();
   $('pause-button').textContent = race.multiplayer ? 'Brake hold' : 'Pause';
   $('pause-restart').hidden = Boolean(race.multiplayer);
-  $('share-room').hidden = !race.multiplayer;
+  if (!SOLO) $('share-room').hidden = !race.multiplayer;
   updateLobby();
 }
 function pauseRace(reason = 'manual') {
@@ -217,8 +219,8 @@ function resumeRace() {
   race.paused = false; race.pauseReason = null; accumulator = 0; $('pause-dialog').close(); audio.start();
 }
 $('pause-restart').onclick = () => { if (race && !race.multiplayer) { const practice = race.practice; controls.keys.clear(); controls.touch = {}; startSolo(practice,Boolean(championship)); } };
-function roomSession(value) { try { if (value === null) sessionStorage.removeItem('velocity-room'); else if (value) sessionStorage.setItem('velocity-room',JSON.stringify(value)); else return JSON.parse(sessionStorage.getItem('velocity-room')); } catch { return null; } }
-function leaveNetwork() { if (socket) { socket.emit('leave-race'); socket.disconnect(); socket = null; } network = null; roomSession(null); $('resume-room').hidden = true; }
+function roomSession(value) { if (SOLO) return null; try { if (value === null) sessionStorage.removeItem('velocity-room'); else if (value) sessionStorage.setItem('velocity-room',JSON.stringify(value)); else return JSON.parse(sessionStorage.getItem('velocity-room')); } catch { return null; } }
+function leaveNetwork() { if (SOLO) return; if (socket) { socket.emit('leave-race'); socket.disconnect(); socket = null; } network = null; roomSession(null); $('resume-room').hidden = true; }
 function garage() {
   restoreCameraPanel();
   leaveNetwork(); race = null; championship = null; webcam.stop(); $('camera-panel').hidden = true; $('pause-dialog').close(); $('results-dialog').close(); $('race-ui').hidden = true; $('garage').hidden = false;
@@ -249,7 +251,7 @@ async function finish(reason = '') {
   $('record-status').textContent = result.saved === false ? 'Browser storage unavailable. Results were not saved.' : result.skipped ? 'Race ended before driving. No progress awarded.' : result.alreadyRecorded ? 'Recovered results · progress already saved on this device.' : race.practice ? 'Practice runs do not affect your records.' : result.ghostSaved === false && !race.multiplayer ? 'Progress saved. The new ghost could not be stored; previous replays were kept.' : 'Progress saved on this device.';
   $('race-again').textContent = race.multiplayer ? 'Request rematch' : championship && championship.round < 3 ? 'Next round' : 'Race again'; $('race-again').disabled = false;
   $('results-dialog').showModal(); audio.effect('finish'); audio.update(null);
-  if (!race.multiplayer && race.token && race.vehicle.finished && !race.practice && race.frames.length <= 85000) {
+  if (!SOLO && !race.multiplayer && race.token && race.vehicle.finished && !race.practice && race.frames.length <= 85000) {
     $('record-status').textContent = 'Verifying the racing line…';
     try {
       const response = await fetch('/api/records', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ token: race.token, frames: race.frames, name: profile.name }) });
@@ -324,6 +326,7 @@ function updateHUD() {
   drawMap(ordered);
 }
 function updateLobby() {
+  if (SOLO) return;
   const waiting=Boolean(race?.multiplayer&&network?.private&&network.state==='waiting');
   $('race-lobby').hidden=!waiting;$('race-ui').classList.toggle('lobby-waiting',waiting);
   if (!waiting) { if ($('camera-panel').parentElement===$('lobby-camera')) restoreCameraPanel();return; }
@@ -399,6 +402,7 @@ function loop(now) {
 }
 
 function joinMultiplayer({ private: privateRoom = false, code = '', resume = null } = {}) {
+  if (SOLO) return;
   saveSelection(); championship = null; leaveNetwork(); const c = { ...config(), mode:'circuit' };
   race = newRace(c); race.multiplayer = true; race.bots = []; race.state = 'waiting';
   network = { code: resume?.code || code, id: null, resume: null, players: [], displayed: new Map(), state:'waiting' };
@@ -437,6 +441,7 @@ function acceptSnapshot(data) {
   else if (own?.finished && data.state !== 'finished') flash('Finished · waiting for the other driver',2);
 }
 $('start-solo').onclick = () => startSolo(); $('tutorial').onclick = () => startSolo(true);
+if (!SOLO) {
 $('quick-match').onclick = () => joinMultiplayer(); $('create-room').onclick = () => joinMultiplayer({private:true});
 $('resume-room').onclick = () => { const saved = roomSession(); if (saved) joinMultiplayer({resume:saved}); };
 $('join-room').onclick = () => { const code = $('room-code').value.trim().toUpperCase(); if (code.length === 6) joinMultiplayer({code}); else toast('Enter a six-character room code.'); };
@@ -447,6 +452,7 @@ $('share-room').onclick = async () => {
   try { await navigator.clipboard.writeText(url.toString()); toast(`Invite copied · room ${network.code}`); }
   catch { toast(`Room ${network.code} · ${url.toString()}`); }
 };
+}
 $('pause-button').onclick = () => pauseRace(); $('race-menu').onclick = garage; $('pause-garage').onclick = garage; $('result-garage').onclick = garage; $('resume').onclick = resumeRace;
 $('pause-dialog').addEventListener('cancel',event => { event.preventDefault(); resumeRace(); });
 $('race-again').onclick = () => {
@@ -464,6 +470,17 @@ function pauseWhileAway() {
 document.addEventListener('visibilitychange',() => { if (document.hidden) pauseWhileAway(); });
 window.addEventListener('pagehide',event => { pauseWhileAway(); webcam.stop(); saveProfile(profile); if(!event.persisted) { renderer?.dispose(); audio.dispose?.(); } });
 $('nav-leaderboard').onclick = async () => {
+  if (SOLO) {
+    const c = config();
+    if (c.mode === 'elimination') c.laps = 3;
+    if (['survival','checkpoint'].includes(c.mode)) c.laps = 30;
+    $('records-dialog').showModal(); $('records-list').replaceChildren();
+    const context = document.createElement('p'); context.className = 'caption'; context.textContent = recordContext(c); $('records-list').append(context);
+    const rows = personalRecords(profile, c);
+    if (!rows.length) { const empty = document.createElement('p'); empty.textContent = 'Finish this event to save a personal best. Recent attempts are in your Driver log.'; $('records-list').append(empty); }
+    rows.forEach(row => recordRow($('records-list'), row.label, row.value));
+    return;
+  }
   $('records-dialog').showModal(); $('records-list').textContent = 'Loading verified records…';
   if (!['circuit','time-trial','championship'].includes(config().mode)) { $('records-list').textContent = 'This event uses local scoring. See your Driver log for results.'; return; }
   try { const response = await fetch('/api/leaderboard?' + new URLSearchParams(config())); const rows = await response.json(); $('records-list').replaceChildren(); if (!rows.length) $('records-list').textContent = 'An open grid. Finish a run to set the first record.'; rows.forEach((row,i) => recordRow($('records-list'),`${i + 1}. ${row.name} / ${CARS.find(c => c.id === row.car)?.name || row.car}`,formatTime(row.time))); }
@@ -482,6 +499,8 @@ try {
   renderer = new RacingRenderer($('world')); refreshCosmetics(); captions(); selectCar(selectedCar);
   if (profile.customization) { $('paint').value = profile.customization.paint || $('paint').value; $('stripe').checked = Boolean(profile.customization.stripe); $('trail-style').value = profile.customization.trail || 'none'; $('wheel-style').value = cosmetics.find(c => c.id === profile.customization.wheels && c.xp <= profile.xp)?.id || 'alloy'; selectCar(selectedCar, false); }
   applySettings(); syncCameraControls(); $('loading').hidden = true; requestAnimationFrame(loop);
-  const invite = new URL(location.href).searchParams.get('room'); if (invite) { $('room-code').value = invite.slice(0,6).toUpperCase(); toast('Invite loaded. Choose your car, then Join.'); }
-  if (roomSession()) { $('resume-room').hidden = false; toast('Previous room found. Rejoin within 20 seconds to recover your car.'); }
+  if (!SOLO) {
+    const invite = new URL(location.href).searchParams.get('room'); if (invite) { $('room-code').value = invite.slice(0,6).toUpperCase(); toast('Invite loaded. Choose your car, then Join.'); }
+    if (roomSession()) { $('resume-room').hidden = false; toast('Previous room found. Rejoin within 20 seconds to recover your car.'); }
+  }
 } catch (error) { $('loading').textContent = `3D graphics could not start: ${error.message}. Enable hardware acceleration in your browser.`; console.error(error); }

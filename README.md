@@ -21,6 +21,8 @@ Pick a car, tune its handling, and chase the next corner. Race three AI rivals, 
 
 **A webcam is optional.** You can play the entire game without one.
 
+**Two editions, one game:** the Full Edition includes online racing and server-verified records. The **Solo Edition** keeps all eleven cars, four worlds, six local events, AI opponents, customization, controls, graphics and local progression, and runs entirely as static files. See [Shared hosting / Namecheap deployment](#shared-hosting--namecheap-deployment).
+
 ## What makes it Velocity?
 
 - **A garage with character:** eleven distinct machines, paint and stripes, wheel unlocks, boost trails, and setup comparisons based on the driving physics.
@@ -187,7 +189,7 @@ flowchart LR
 
 ```sh
 npm run build    # Production client and gesture worker
-npm test         # 134 regression and integration tests
+npm test         # Gameplay, webcam, profiles and multiplayer regressions
 npm audit        # Dependency audit
 ```
 
@@ -205,6 +207,119 @@ npm audit        # Dependency audit
 For production, run `npm run build`, set `NODE_ENV=production`, then run `npm start`. The included `render.yaml` uses this workflow. `PORT` selects the listening port; `RACING_DB` can point SQLite at durable storage. The default database is `server/data/racing.sqlite`. Ephemeral hosting storage can lose records on redeploy.
 
 Profiles and ghosts belong to the browser they were saved in. A blocked or full browser store still allows racing, but can limit persistence. No paid services or external car-model downloads are required.
+
+## Shared hosting / Namecheap deployment
+
+The Solo Edition is a static website for Apache-compatible shared hosting. **Upload only the compiled Solo files, never the repository, `server/`, `node_modules/`, or a database.** No Node process, Passenger application, PHP, external API, WebSocket service or database is required on the host. Node is used only on your own computer to build and test.
+
+### Build and preview locally
+
+Use Node.js **22.13 or newer** (Node 24 recommended), with npm:
+
+```sh
+npm ci
+npm test
+npm run build           # Full Edition; existing server deployment remains supported
+npm run test:solo       # Builds Solo and tests the compiled static output over HTTP
+npm run package:solo    # Builds Solo again and creates the validated deployment ZIP
+npm run preview:solo    # Local static preview at http://localhost:4173/
+```
+
+Stop the preview with Ctrl+C. If 4173 is occupied, set `SOLO_PORT` before starting the preview. Do not open `index.html` with `file://`; workers and browser modules need HTTP locally or HTTPS on the deployed site.
+
+| Command / output | Purpose |
+|---|---|
+| `npm run build` → `dist/` | Full frontend; `npm start` still runs the original Express/Socket.IO/SQLite application |
+| `npm run build:solo` → `dist-namecheap/` | Complete static Solo website |
+| `npm run package:solo` → `velocity-namecheap-solo.zip` | ZIP with `index.html`, assets, worker, WASM and `.htaccess` directly at its root |
+| `npm run preview:solo` | Development-only static HTTP server; never uploaded |
+
+The default Solo base is `/`, for a dedicated subdomain such as `https://velocity.example.com/`. **That address is an example, not a configured domain.** The generated directories and ZIP are ignored by Git. Build scripts copy an explicit runtime asset allowlist instead of copying the repository; packaging rejects unexpected files and backend/development references.
+
+### Optional subdirectory installation
+
+For `https://example.com/velocity/`, build with `/velocity/` as the base, including both slashes. In PowerShell:
+
+```powershell
+$env:VELOCITY_BASE = '/velocity/'
+npm run test:solo
+npm run package:solo
+npm run preview:solo
+```
+
+The preview opens at `http://localhost:4173/velocity/`. Upload this ZIP's contents into the corresponding `velocity` directory. On macOS/Linux prefix each command with `VELOCITY_BASE=/velocity/`. Nested paths such as `/games/velocity/` are also accepted; external URLs and traversal paths are rejected.
+
+To return to a dedicated subdomain root in PowerShell, run `$env:VELOCITY_BASE = '/'` and regenerate the package. Each build replaces `dist-namecheap/`; keep separately named copies if you need both deployment paths. A package built for `/velocity/` will not work at `/` without rebuilding.
+
+### Create the cPanel destination
+
+1. Sign in to your hosting cPanel and open **Domains → Create A New Domain**.
+2. Enter your intended subdomain, for example `velocity.your-domain.com`.
+3. Disable **Share document root** and choose a separate directory for this game. Note the exact document root shown by cPanel. Create the domain. Existing account configuration can affect the available fields; follow [Namecheap's current subdomain guide](https://www.namecheap.com/support/knowledgebase/article.aspx/9190/29/how-to-create-a-subdomain-in-cpanel/).
+4. In **File Manager**, open that exact document root. Enable **Show Hidden Files** so `.htaccess` is visible.
+5. Upload `velocity-namecheap-solo.zip` into this directory, then choose **Extract** into the same directory. Confirm that `index.html`, `assets/`, `vendor/`, `build-info.json` and `.htaccess` are directly there, with no enclosing `dist-namecheap` folder. You can remove the uploaded ZIP afterward.
+6. Verify a valid SSL certificate covers the subdomain using cPanel's **Namecheap SSL** tools, then open the game with `https://`. Certificate availability and renewal depend on your account. See [Namecheap's SSL manager guide](https://www.namecheap.com/support/knowledgebase/article.aspx/9387/2218/what-is-namecheap-ssl-and-how-do-i-use-it/). Camera access requires HTTPS outside localhost. Enable HTTPS redirection through the hosting controls after HTTPS works.
+
+The included `.htaccess` sets the directory index, JavaScript/WASM MIME types, and conservative cache revalidation. It contains no PHP handlers, proxy rules, SPA rewrites or forced redirects. Keep this file scoped to the game's own directory; do not replace an unrelated site's `.htaccess`.
+
+### Test the uploaded game
+
+1. Open the HTTPS URL. The menu should say **SOLO EDITION / 3D**, with **Your records** and no Quick Match, private room, room code or invite controls.
+2. In browser developer tools, inspect **Console** and **Network**. Required JS/CSS, the asphalt texture and favicon must load successfully. There should be no `/api/`, Socket.IO, WebSocket, Vite development or localhost requests.
+3. Choose a car, track and difficulty; complete a circuit race against AI. Use **Race again**, return to the garage, then open **Your records**. Reload and confirm the record and settings remain.
+4. Try the other events and graphics settings. Complete a **Time trial** and run the same track, difficulty, distance, daily seed, car and setup again to see its saved ghost. Ghost categories intentionally distinguish these settings.
+5. Enable webcam controls, allow access, and wait for calibration. Confirm the preview, fist acceleration, palm braking and tilted steering. The first webcam start downloads the local model and WASM; no camera frame is uploaded. Cover/uncover your hand and check recovery. Turn the camera off and confirm keyboard play still works.
+6. Repeat with camera access denied: driving with keyboard/touch/controller must remain available. Test your physical controller and phone/tablet if you use them; desktop emulation cannot verify real device behavior.
+
+Local records are personal bests for a course/event/difficulty/distance/seed, compared across cars and setups. They are stored on this browser, not globally ranked, synchronized or server-verified. Progression and recent attempts remain in the Driver log. Blocked/full browser storage leaves gameplay working and displays a save warning. Different domains, browser profiles or ports have separate saves; clearing site data removes them. Full and Solo installations on the same origin intentionally reuse the existing profile format.
+
+Once the game and needed assets are loaded, local simulation does not need a backend or connection. **Offline reloads are not guaranteed:** there is no mandatory service worker/PWA cache. Enable the webcam while online before testing camera use offline, since its resources load on demand.
+
+### Publish future updates
+
+Keep editing the shared source, run the tests and regenerate the ZIP with the correct base. Back up the game's current hosting directory, upload the new ZIP and extract it into that same game directory. Upload assets/vendor files before switching `index.html` if updating manually. Do not delete unrelated hosting files, `.well-known` certificate files or other websites. Keep old hashed assets until open game sessions have closed; remove only files you know belong to an older Solo build.
+
+The generated `.htaccess` asks browsers to revalidate files; Vite also hashes the main JS/CSS filenames. If a hosting cache/CDN is enabled, purge the game path after updating and hard-refresh. Do not clear browser storage to refresh code, because that deletes racing progress. Model/worker/vendor filenames are stable and must be replaced together with each release.
+
+### Troubleshooting
+
+| Symptom | Check |
+|---|---|
+| Blank screen | Confirm HTTPS, the document root, and the Console's first error. Use a modern WebGL-capable browser with hardware acceleration. |
+| JS/CSS/texture 404 | Check extraction depth and the build base. Rebuild for the URL where the game is actually installed. |
+| Missing model / worker | Upload all of `assets/models/` and `vendor/`, not just the Vite `assets` bundle. Files must come from the same package. |
+| WASM MIME or compilation error | Confirm `.wasm` requests return actual binary with `application/wasm`, not an HTML error page, access restriction or inherited rewrite response. Verify the scoped `.htaccess` was extracted. |
+| Camera fails | Use HTTPS, allow the correct site's permission, close other apps using the camera, then Retry camera. Declining access does not prevent keyboard racing. |
+| Progress disappears | Check private browsing, blocked/full localStorage, changed hostname/port/profile, or deleted site data. Saves are browser-local. |
+| New HTML but old JavaScript | Upload the complete new package, purge host/CDN caches if enabled and hard-refresh; keep site data. |
+| Server error after extraction | Check inherited hosting rules and the scoped `.htaccess`. Consult host support if an Apache directive is restricted; the game needs no rewrite rules or security-policy relaxations. |
+
+### Shared implementation and verification
+
+Both editions use the same `main.js`, renderer, physics, AI, input, webcam, audio, profiles, ghosts and event rules. `vite.solo.config.js` sets a compile-time Solo flag, strips marked online-only HTML and replaces the networking adapter. Online challenge/record requests and invite/session handlers are excluded from Solo execution; Socket.IO is absent from the Solo bundle. A small local-records view uses existing profile bests/ghosts. Shared asset URLs respect Vite's configured base, including the classic worker's model/WASM paths. `server/server.js`, shared physics and `render.yaml` remain the Full Edition implementation.
+
+New build tools: `scripts/build-solo.mjs`, `scripts/package-solo.mjs`, `scripts/solo-artifacts.mjs` and the local-only `scripts/serve-solo.mjs`. New regression coverage lives in `tests/solo-records.test.mjs`, `tests/static/` and the existing application integration fixture. The static worker probe is a test fixture only and is excluded from the deployment ZIP.
+
+Verification for the initial static edition (October 21, 2026):
+
+| Check | Result |
+|---|---|
+| Lockfile installation (`npm ci`) | Passed; 110 packages installed, dependency audit reported zero vulnerabilities |
+| `npm test` | 140 passed, 0 failed; includes server replay verification, multiplayer recovery, four-driver private lobbies, host transfer, gestures, inputs, profiles and all-car physics |
+| `npm run build` | Passed; Full frontend and diagnostics built successfully |
+| `npm run test:solo`, `/` and `/velocity/` | 3 passed, 0 failed at each base; all static asset bytes and WASM MIME checked over HTTP; nonexistent APIs/source files return 404 |
+| `npm run package:solo` | Passed; 16 static files, about 21.55 MiB compressed; `index.html` at ZIP root; no backend, databases, source maps or dependency directories |
+| Independent ZIP extraction | .NET ZIP reader extracted all entries; SHA256 hashes matched the generated deployment files |
+| Desktop browser, Solo | Circuit finished against three AI drivers (26.87 s), Race again, garage navigation, personal record/ghost retained after reload |
+| Time trial / ghost replay | Trial finished (22.58 s); next run displayed the saved ghost and a live 0.29 s gap |
+| Static webcam resources | Extracted root ZIP and nested build both loaded local worker/WASM/model and completed blank-frame inference without requesting a webcam |
+| Mobile emulation | 390 × 844 layout exposed touch controls; held GO accelerated to 206 km/h in Checkpoint rush |
+| Settings and network | Graphics/view/reduced-motion settings survived reload; inspected Solo requests stayed on the static origin with no APIs, Socket.IO, WebSockets or Vite client |
+| Full production runtime | Original command served the game, health, challenge and leaderboard endpoints; browser created a private Socket.IO lobby successfully; used a separate test SQLite database |
+
+No test failures remain. Browser graphics logs contained an existing ANGLE shader precision warning; rendering and racing continued. A temporary worker-only test fixture initially requested a missing default favicon; the deployed game uses its bundled icon, and the fixture now disables that request. **Not executed:** a real live-hand calibration/accuracy session, physical gamepad, real phone/tablet, Safari/Firefox, actual Namecheap Apache/SSL deployment, or a network-disconnected reload. Camera-denied/error recovery and controller logic are regression-tested with mocks, not physical hardware. Follow the manual checklist above on your own HTTPS host. No hosting, DNS, push or merge was performed.
+
+**Deployment checklist:** build and test → generate the root or subdirectory ZIP → create a separate HTTPS document root → upload and extract the ZIP contents there → confirm `index.html` placement → test a race, saved records and webcam permissions. No live hosting or DNS changes are performed by the build tools.
 
 ---
 

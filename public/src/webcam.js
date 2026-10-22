@@ -1,4 +1,5 @@
 import { GestureFilter } from '../../shared/gestures.js';
+import { assetUrl } from './asset-url.js';
 const connections = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[0,17],[17,18],[18,19],[19,20]];
 export function cameraErrorMessage(error) {
   if (error?.name === 'NotAllowedError' || error?.name === 'SecurityError') return 'Camera access was blocked. Allow camera access for this site, then retry.';
@@ -28,7 +29,7 @@ export class WebcamControls {
       if (session !== this.session) return;
       clearTimeout(this.timeout);
       this.status.textContent = 'Loading gesture model…';
-      this.worker = new Worker('/vendor/gesture-worker.js');
+      this.worker = new Worker(assetUrl('vendor/gesture-worker.js'));
       this.worker.onmessage = ({ data }) => {
         if (session !== this.session) return;
         if (data.type === 'ready') { this.ready = true; clearTimeout(this.timeout); this.lastResultTime = performance.now(); this.status.textContent = 'Hold an open palm level to calibrate'; this.schedule(session); }
@@ -40,7 +41,7 @@ export class WebcamControls {
         } else if (data.type === 'error') { console.warn('Gesture worker:', data.message); this.fail('Gesture model unavailable. Keyboard controls still work.'); }
       };
       this.worker.onerror = () => { if (session === this.session) this.fail('Gesture worker failed. Use keyboard controls.'); };
-      this.worker.postMessage({ type: 'init', origin: location.origin });
+      this.worker.postMessage({ type: 'init', origin: location.origin, baseUrl: new URL(assetUrl(''), location.href || location.origin).href });
       this.timeout = setTimeout(() => { if (session === this.session && !this.ready) this.fail('Gesture model timed out. Use keyboard controls.'); }, 20000);
     } catch (error) { if (session === this.session) this.fail(cameraErrorMessage(error)); }
   }

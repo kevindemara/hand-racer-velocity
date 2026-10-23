@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="88" viewBox="0 0 480 88" role="img" aria-labelledby="title description">
+  <title id="title">Play Single Player Demo</title>
+  <desc id="description">Launch Velocity and race AI opponents in your browser.</desc>
+  <rect x="1" y="1" width="478" height="86" rx="12" fill="#f17c4a" stroke="#102330" stroke-width="2"/>
+  <path d="M16 24h5L11 64H6zM25 24h5L20 64h-5z" fill="#102330" opacity=".35"/>
+  <text x="42" y="40" fill="#102330" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700">Play Single Player Demo</text>
+  <text x="43" y="64" fill="#102330" font-family="Arial, Helvetica, sans-serif" font-size="14" letter-spacing="1.2">VELOCITY / RACE IN YOUR BROWSER</text>
+  <path d="M419 44h28m-11-11 11 11-11 11" fill="none" stroke="#102330" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

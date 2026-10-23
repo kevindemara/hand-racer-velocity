@@ -11,7 +11,7 @@ A browser arcade racer with real 3D cars, calibrated webcam steering, and online
 ![Events](https://img.shields.io/badge/events-6_modes-87c8f2?style=flat-square)
 ![JavaScript](https://img.shields.io/badge/built_with-JavaScript-f7df1e?style=flat-square)
 
-[Get started](#get-on-the-grid) · [Controls](#controls) · [Webcam](#drive-with-your-hands) · [Tech stack](#under-the-hood)
+[Play Solo](https://velocity.kevindemara.com/) · [Get started](#get-on-the-grid) · [Controls](#controls) · [Webcam](#drive-with-your-hands) · [Tech stack](#under-the-hood)
 
 ![Vector F1 racing through Golden Coast with the live standings, speedometer, and track map](public/assets/screenshots/coast-race.jpg)
 

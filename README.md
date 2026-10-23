@@ -11,7 +11,7 @@ A browser arcade racer with real 3D cars, calibrated webcam steering, and online
 ![Events](https://img.shields.io/badge/events-6_modes-87c8f2?style=flat-square)
 ![JavaScript](https://img.shields.io/badge/built_with-JavaScript-f7df1e?style=flat-square)
 
-[Get started](#get-on-the-grid) · [Controls](#controls) · [Webcam](#drive-with-your-hands) · [Tech stack](#under-the-hood)
+[Play Solo](https://velocity.kevindemara.com/) · [Get started](#get-on-the-grid) · [Controls](#controls) · [Webcam](#drive-with-your-hands) · [Tech stack](#under-the-hood)
 
 ![Vector F1 racing through Golden Coast with the live standings, speedometer, and track map](public/assets/screenshots/coast-race.jpg)
 
@@ -261,6 +261,14 @@ To return to a dedicated subdomain root in PowerShell, run `$env:VELOCITY_BASE =
 6. Verify a valid SSL certificate covers the subdomain using cPanel's **Namecheap SSL** tools, then open the game with `https://`. Certificate availability and renewal depend on your account. See [Namecheap's SSL manager guide](https://www.namecheap.com/support/knowledgebase/article.aspx/9387/2218/what-is-namecheap-ssl-and-how-do-i-use-it/). Camera access requires HTTPS outside localhost. Enable HTTPS redirection through the hosting controls after HTTPS works.
 
 The included `.htaccess` sets the directory index, JavaScript/WASM MIME types, and conservative cache revalidation. It contains no PHP handlers, proxy rules, SPA rewrites or forced redirects. Keep this file scoped to the game's own directory; do not replace an unrelated site's `.htaccess`.
+
+**If Cloudflare manages your DNS:** add an A record for the game subdomain using the shared IP shown in your own cPanel account. Leave the existing apex, `www`, email records and nameservers as they are. DNS-only works with a valid hosting certificate and lets the hosting provider validate the origin directly while SSL is being issued.
+
+Namecheap may reject a standalone subdomain as an addon domain with a remote-nameserver/ownership error. In that case, first add the parent domain to cPanel with its own separate document root, then add the game as a subdomain of that parent. This creates hosting definitions; it does not require changing the parent website's authoritative DNS. If cPanel requests a verification TXT record, use the exact name/value displayed by cPanel; never copy another account's validation token. Check that subdomain creation succeeded before waiting for its certificate. Namecheap's automatic SSL installation can take time after the domain becomes reachable. Keep browser certificate validation enabled and wait for valid HTTPS before enabling webcam controls or forcing HTTPS redirects. Do not lower the entire Cloudflare zone's SSL/security settings to make the game load.
+
+**Cloudflare Origin CA alternative:** generate the private key and public CSR on the hosting server, issue an Origin CA certificate for only the game hostname, and install it in cPanel with the matching key and Cloudflare RSA root chain. Keep the private key outside every web root and repository. Enable Cloudflare proxying for that game's A record and apply **SSL: Strict** through a hostname-specific Page Rule when other sites share the zone. Verify HTTPS first, then add an HTTP-to-HTTPS redirect scoped to the game's directory. Origin CA certificates require the Cloudflare proxy to remain enabled; browsers do not trust them when connecting directly to the origin. See [Cloudflare's Origin CA instructions](https://developers.cloudflare.com/ssl/origin-configuration/origin-ca/).
+
+The live [Velocity Solo installation](https://velocity.kevindemara.com/) uses this Origin CA setup, a hostname-specific Strict rule, and an HTTPS redirect. Its origin certificate expires **October 19, 2041 UTC**. Track that date when maintaining the site; Cloudflare does not send Origin CA expiry notifications. The downloadable ZIP stays portable and does not include deployment-specific redirects or any certificates/keys. Preserve the live redirect when replacing its `.htaccess` during an update.
 
 ### Test the uploaded game
 
